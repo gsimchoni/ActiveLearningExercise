@@ -138,10 +138,10 @@ runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models,
   y.test <- testSet$y
   
   # Load allowedModelsList
-  allowedModelsList <<- scan("allowedModelsList.txt", what = "character", quiet = TRUE)
+  allowedModelsList <<- scan("resources/allowedModelsList.txt", what = "character", quiet = TRUE)
   
   # Load allowedUncertaintiesList
-  allowedUncertaintiesList <<- scan("allowedUncertaintiesList.txt", what = "character", quiet = TRUE)
+  allowedUncertaintiesList <<- scan("resources/allowedUncertaintiesList.txt", what = "character", quiet = TRUE)
   
   # Check input validity
   checkInputValidity(totalSampleSize, querySize, models, uncertainty, numReports, dim(X)[1], dim(X)[2], pca, numPCs)
