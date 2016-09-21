@@ -1,0 +1,4 @@
+leastConfident
+marginSampling
+entropy
+voteEntropy
