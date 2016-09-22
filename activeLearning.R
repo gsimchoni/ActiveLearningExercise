@@ -1,8 +1,8 @@
 getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize = 500, querySize = 1,
-                            models, uncertainty) {
+                            models, uncertainty, initSampleSize = 50) {
   
   # check that totalSampleSize isn't larger than total no. of unlabeled samples
-  if (totalSampleSize > dim(X)[1]) {
+  if (totalSampleSize > nrow(X)) {
     stop("totalSampleSize cannot be larger than total n")
   }
   
@@ -21,39 +21,35 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize 
   
   # If queryIdx is NULL, this means we're querying for the first time - need to use random sample
   if (is.null(queryIdx)) {
-    queryIdx <- sample(dim(X)[1], querySize)
-    numIter <- numIter - 1
+    queryIdx <- sample(dim(X)[1], initSampleSize)
+    numIter <- numIter - (initSampleSize/querySize)
   }
   
-  # If y isn't a factor try to make one...
-  if (!is.factor(y)) {
-    labels = paste0("l", 0:(length(table(y)) - 1))
-    y <- factor(y, labels = labels)
+  if (length(table(y[queryIdx])) != nClass) {
+    stop("A model is about to get y values without all classes. Either numReports is too high or initSampleSize too low.")
   }
-  
-  ctrl <- trainControl(number = 1,
-                       classProbs = TRUE,
-                       verboseIter = FALSE,
-                       savePredictions = FALSE)
   
   for (iter in 1:numIter) {
+    cat("total no. of queries:", length(queryIdx), "\n")
+    
     # Create data.frame to store predictions
     predDF <- data.frame(matrix(nrow = dim(X[-queryIdx,])[1], ncol = length(models) * nClass))
+    # Get variations in columns, often = 0 when n is small and might be problematic
+    sds <- apply(X[queryIdx,], 2, sd)
+    tempTrainDF <- data.frame(y = y[queryIdx], X = X[queryIdx, which(sds > 0)])
+    tempTestDF <- data.frame(y = y[-queryIdx], X = X[-queryIdx, which(sds > 0)])
     # Train models
     for (i in 1:length(models)) {
-      fit <- train(x = X[queryIdx, ], y = y[queryIdx],
-                   method = models[i],
-                   trControl=ctrl,
-                   verbose=FALSE)
-      predDF[, (nClass * (i - 1) + 1) : (nClass * i)] <- predict(fit, X[-queryIdx,], type = "prob")
+      predDF[, (nClass * (i - 1) + 1) : (nClass * i)] <- fitModel(models[i], tempTrainDF, tempTestDF)
     }
     
     # Choose next samples
-    nextToQuery <- getNextQuery(predDF, querySize, uncertainty, length(models), 1:dim(X)[1], queryIdx)
+    nextToQuery <- getNextQuery(predDF, querySize, uncertainty, length(models), 1:nrow(X), queryIdx)
     
     # Add next samples to queryIdx
     queryIdx <- c(queryIdx, nextToQuery)
   }
+  cat("total no. of queries:", length(queryIdx), "\n")
   
   # In case totalSampleSize %% querySize != 0 we have a little too many observations
   #queryIdx <- queryIdx[1:totalSampleSize] ###### THIS IS PROBLEMATIC ############
@@ -62,7 +58,7 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize 
   return(queryIdx)
 }
 
-checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, numReports, nData, pData, pca, numPCs) {
+checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, numReports, nData, pData, pca, numPCs, initSampleSize) {
   # check that all models are in allowedModelsList
   if (any(!models %in% allowedModelsList)) {
     stop("You have specified a model not in the allowedModelsList")
@@ -93,10 +89,11 @@ checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, 
     stop("querySize is larger than each report size")
   }
   
-  # check that each report size is a multiple of querySize
-  if ((totalSampleSize / numReports) %% querySize != 0) {
-    stop("each report size is not a multiple of querySize (will change in the future")
+  # check that totalSampleSize - initSampleSize is a multiple of querySize
+  if ((totalSampleSize - initSampleSize) %% querySize != 0) {
+    stop("what's left of totalSampleSize after sampling initSampleSize is not a multiple of querySampleSize")
   }
+  
   
   # check that uncertainty is allowed for no. of models
   if (uncertainty == "voteEntropy" & length(models) == 1) {
@@ -120,21 +117,51 @@ checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, 
 }
 
 getNextQuery <- function(pred, querySize, uncertainty, nModels, ids, queryIdx) {
-  nextQueryIDs = switch(uncertainty,
+  nextQueryIDs <- switch(uncertainty,
          leastConfident = leastConfident(pred, querySize),
          marginSampling = marginSampling(pred, querySize),
          entropy = entropy(pred, querySize),
-         voteEntropy = voteEntropy(pred, querySize, nModels))
+         voteEntropy = voteEntropy(pred, querySize, nModels),
+         voteMargin = voteMargin(pred, querySize, nModels))
   return(ids[-queryIdx][nextQueryIDs])
 }
 
+fitModel <- function(model, tempTrainDF, tempTestDF) {
+  fit <- switch(model,
+                gbm = gbm(y ~ ., data = tempTrainDF, distribution = "multinomial"),
+                rf = randomForest(y ~ ., data = tempTrainDF, mtry = floor(sqrt(ncol(tempTrainDF)))),
+                knn = knn3(y ~ ., data = tempTrainDF, k = 10),
+                svm = svm(y ~ ., data = tempTrainDF, probability = TRUE),
+                rpart = rpart(y ~ ., data = tempTrainDF),
+                bag = bagging(y ~ ., data = tempTrainDF))
+  pred <- switch(model,
+                 gbm = predict(fit, tempTestDF, n.trees = 100, type = "response")[,,1],
+                 rf = predict(fit, tempTestDF, type = "prob"),
+                 knn = predict(fit, tempTestDF, type = "prob"),
+                 svm = attributes(predict(fit, tempTestDF, probability = TRUE))$probabilities,
+                 rpart = predict(fit, tempTestDF, type = "prob"),
+                 bag = predict(fit, tempTestDF, type = "prob"))
+  return(pred)
+}
+
 runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models, nClass = 10,
-                                   uncertainty, pca = FALSE, numPCs = NA, numReports = 10) {
+                                   uncertainty, pca = FALSE, numPCs = NA, numReports = 10,
+                                   initSampleSize = 50, finalModel) {
+ 
+  source("loadMnist.R")
+  source("uncertainties.R")
+  suppressMessages(library(caret))
+  suppressMessages(library(gbm))
+  suppressMessages(library(randomForest))
+  suppressMessages(library(e1071))
+  suppressMessages(library(rpart))
+  suppressMessages(library(ipred))
+  
   # Load MNIST datasets
   load_mnist()
-  X <- trainSet$x
+  X <- trainSet$x/255
   y <- trainSet$y
-  X.test <- testSet$x
+  X.test <- testSet$x/255
   y.test <- testSet$y
   
   # Load allowedModelsList
@@ -144,7 +171,7 @@ runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models,
   allowedUncertaintiesList <<- scan("resources/allowedUncertaintiesList.txt", what = "character", quiet = TRUE)
   
   # Check input validity
-  checkInputValidity(totalSampleSize, querySize, models, uncertainty, numReports, dim(X)[1], dim(X)[2], pca, numPCs)
+  checkInputValidity(totalSampleSize, querySize, models, uncertainty, numReports, nrow(X), ncol(X), pca, numPCs, initSampleSize)
   
   # Perform PCA if necessary
   if (pca) {
@@ -169,44 +196,58 @@ runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models,
   y.te.factor <- factor(y.test, labels = paste0("d", 0:(nClass - 1)))
   
   # create training data.frame convenient for gbm
-  teData <- data.frame(X = X.test, y = y.te.factor)
-  colnames(teData) = c(colnames(X), "y")
+  # teData <- data.frame(X = X.test, y = y.te.factor)
+  
+  # getting totalSampleSize random sample once
+  randIdx <- sample(nrow(X), totalSampleSize)
+  r <- randIdx[1:reportTotalSampleSize]
+  if (length(table(y.tr.factor[r])) != nClass) {
+    stop("A model is about to get y values without all classes. Either numReports is too high or initSampleSize too low.")
+  }
+  
+  queryIdx <- getQueryIndices(X, y.tr.factor, queryIdx, 10,
+                              totalSampleSize, querySize, models, uncertainty, initSampleSize)
+  q <- queryIdx[1:reportTotalSampleSize]
+  if (length(table(y[q])) != nClass) {
+    stop("A model is about to get y values without all classes. Either numReports is too high or initSampleSize too low.")
+  }
   
   for (i in 1:numReports) {
-    # Get query indices
-    queryIdx <- getQueryIndices(X, y.tr.factor, queryIdx, 10,
-                                reportTotalSampleSize, querySize, models, uncertainty)
-    
     # Perform final model(s) on query
-    trData <- data.frame(X = X[queryIdx, ], y = y.tr.factor[queryIdx])
-    colnames(trData) = c(colnames(X), "y")
-    
-    fitAL <- gbm(y ~ ., data = trData, n.trees = 100, distribution = "multinomial")
+    sds <- apply(X[q, ], 2, sd)
+    trData <- data.frame(X = X[q, which(sds > 0)], y = y.tr.factor[q])
+    teData <- data.frame(X = X.test[, which(sds > 0)], y = y.te.factor)
     
     # Get AL test data performance
-    allPredAL <- predict(fitAL, teData, n.trees = 100, type = "response")[,,1]
+    allPredAL <- fitModel(finalModel, trData, teData)
     predAL <- apply(allPredAL, 1, function(x) which.max(x) - 1)
     accuracyAL[i] <- sum(predAL == y.test) / length(y.test)
     
     # Perform final model(s) on random totalSampleSize from train
-    randSample <- sample(dim(X)[1], i * reportTotalSampleSize)
-    randData <- data.frame(X = X[randSample, ], y = y.tr.factor[randSample])
-    colnames(randData) = c(colnames(X), "y")
-    
-    fitPL <- gbm(y ~ ., data = randData, n.trees = 100, distribution = "multinomial")
+    sds <- apply(X[r, ], 2, sd)
+    randData <- data.frame(X = X[r, which(sds > 0)], y = y.tr.factor[r])
+    teData <- data.frame(X = X.test[, which(sds > 0)], y = y.te.factor)
     
     # Get PL test data performance
-    allPredPL <- predict(fitPL, teData, n.trees = 100, type = "response")[,,1]
+    allPredPL <- fitModel(finalModel, randData, teData)
     predPL <- apply(allPredPL, 1, function(x) which.max(x) - 1)
     accuracyPL[i] <- sum(predPL == y.test) / length(y.test)
+    
+    # Get query indices
+    q <- queryIdx[1:(reportTotalSampleSize * (i + 1))]
+    r <- randIdx[1:(reportTotalSampleSize * (i + 1))]
   }
   
+  confMatrixAL <- table(predAL, y.te.factor)
+  confMatrixPL <- table(predPL, y.te.factor)
   
   # Save results
   
   # Graph results and save graphs
-  plot(reportTotalSampleSize * (1:numReports), accuracyAL, type="l", col="red", xaxt="n")
+  plot(reportTotalSampleSize * (1:numReports), accuracyAL, type="l", col="red", xaxt="n", ylim = c(0, 1), xlab = "sample n")
   lines(reportTotalSampleSize * (1:numReports), accuracyPL, col="green")
+  axis(1, reportTotalSampleSize * (1:numReports))
   
-  return(list(accuracyAL = accuracyAL, accuracyPL = accuracyPL))
+  return(list(accuracyAL = accuracyAL, accuracyPL = accuracyPL, confMatrixAL = confMatrixAL, confMatrixPL = confMatrixPL,
+              randIdx = randIdx, queryIdx = queryIdx))
 }

@@ -2,3 +2,4 @@ leastConfident
 marginSampling
 entropy
 voteEntropy
+voteMargin
