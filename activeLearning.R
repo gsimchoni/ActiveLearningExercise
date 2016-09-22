@@ -1,5 +1,5 @@
 getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize = 500, querySize = 1,
-                            models, uncertainty, initSampleSize = 50) {
+                            models, uncertainty, initSampleSize = 50, queryBagging = FALSE, nBag = 1) {
   
   # check that totalSampleSize isn't larger than total no. of unlabeled samples
   if (totalSampleSize > nrow(X)) {
@@ -11,9 +11,9 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize 
     stop("querySize cannot be larger than totalSampleSize")
   }
   
-  # check that totalSampleSize is a multiple of querySize
-  if (totalSampleSize %% querySize != 0) {
-    stop("totalSampleSize is not a multiple of querySize (will change in the future")
+  # check that totalSampleSize - initSampleSize is a multiple of querySize
+  if ((totalSampleSize - initSampleSize) %% querySize != 0) {
+    stop("what's left of totalSampleSize after sampling initSampleSize is not a multiple of querySampleSize")
   }
   
   # How many iterations to run
@@ -21,7 +21,7 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize 
   
   # If queryIdx is NULL, this means we're querying for the first time - need to use random sample
   if (is.null(queryIdx)) {
-    queryIdx <- sample(dim(X)[1], initSampleSize)
+    queryIdx <- sample(nrow(X), initSampleSize)
     numIter <- numIter - (initSampleSize/querySize)
   }
   
@@ -33,18 +33,29 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize 
     cat("total no. of queries:", length(queryIdx), "\n")
     
     # Create data.frame to store predictions
-    predDF <- data.frame(matrix(nrow = dim(X[-queryIdx,])[1], ncol = length(models) * nClass))
+    predDF <- data.frame(matrix(nrow = dim(X[-queryIdx,])[1], ncol = length(models) * nBag * nClass))
     # Get variations in columns, often = 0 when n is small and might be problematic
     sds <- apply(X[queryIdx,], 2, sd)
     tempTrainDF <- data.frame(y = y[queryIdx], X = X[queryIdx, which(sds > 0)])
     tempTestDF <- data.frame(y = y[-queryIdx], X = X[-queryIdx, which(sds > 0)])
     # Train models
     for (i in 1:length(models)) {
-      predDF[, (nClass * (i - 1) + 1) : (nClass * i)] <- fitModel(models[i], tempTrainDF, tempTestDF)
+      if (!queryBagging) {
+        predDF[, (nClass * (i - 1) + 1) : (nClass * i)] <- fitModel(models[i], tempTrainDF, tempTestDF)
+      } else {
+        for (b in 1:nBag) {
+          queryIdxBagged <- sample(queryIdx, length(queryIdx), replace = TRUE)
+          sds <- apply(X[queryIdxBagged,], 2, sd)
+          tempTrainDF <- data.frame(y = y[queryIdxBagged], X = X[queryIdxBagged, which(sds > 0)])
+          tempTestDF <- data.frame(y = y[-queryIdx], X = X[-queryIdx, which(sds > 0)])
+          predDF[, (nClass * ((i - 1) * nBag + (b - 1)) + 1) : (nClass * ((i - 1) * nBag + b))] <- 
+                   fitModel(models[i], tempTrainDF, tempTestDF)
+        }
+      }
     }
     
     # Choose next samples
-    nextToQuery <- getNextQuery(predDF, querySize, uncertainty, length(models), 1:nrow(X), queryIdx)
+    nextToQuery <- getNextQuery(predDF, querySize, uncertainty, length(models) * nBag, 1:nrow(X), queryIdx)
     
     # Add next samples to queryIdx
     queryIdx <- c(queryIdx, nextToQuery)
@@ -58,7 +69,8 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass = 10, totalSampleSize 
   return(queryIdx)
 }
 
-checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, numReports, nData, pData, pca, numPCs, initSampleSize) {
+checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, numReports, nData, pData,
+                               pca, numPCs, initSampleSize, queryBagging, nBag) {
   # check that all models are in allowedModelsList
   if (any(!models %in% allowedModelsList)) {
     stop("You have specified a model not in the allowedModelsList")
@@ -94,13 +106,20 @@ checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, 
     stop("what's left of totalSampleSize after sampling initSampleSize is not a multiple of querySampleSize")
   }
   
-  
   # check that uncertainty is allowed for no. of models
-  if (uncertainty == "voteEntropy" & length(models) == 1) {
-    stop("uncertainty voteEntropy does not make sense with a single model")
+  if (uncertainty == "voteEntropy" & length(models) == 1 & (!queryBagging)) {
+    stop("uncertainty voteEntropy does not make sense with a single model without baggnig")
   }
   if (uncertainty %in% c("leastConfident", "marginSampling", "entropy") & length(models) > 1) {
     stop("uncertainty chosen does not make sense with a committee of models")
+  }
+  
+  # check that bagging parameters make sense
+  if (!queryBagging & nBag > 1) {
+    stop("if queryBagging = FALSE, nBag should be 1")
+  }
+  if (queryBagging & nBag == 1) {
+    warning("bagging is usually made with nBag > 1")
   }
   
   # check PCA numPCs parameter if pca = TRUE
@@ -141,12 +160,12 @@ fitModel <- function(model, tempTrainDF, tempTestDF) {
                  svm = attributes(predict(fit, tempTestDF, probability = TRUE))$probabilities,
                  rpart = predict(fit, tempTestDF, type = "prob"),
                  bag = predict(fit, tempTestDF, type = "prob"))
-  return(pred)
+  return(pred[, order(colnames(pred))])
 }
 
 runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models, nClass = 10,
                                    uncertainty, pca = FALSE, numPCs = NA, numReports = 10,
-                                   initSampleSize = 50, finalModel) {
+                                   initSampleSize = 50, finalModel, queryBagging = FALSE, nBag = 1) {
  
   source("loadMnist.R")
   source("uncertainties.R")
@@ -171,7 +190,8 @@ runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models,
   allowedUncertaintiesList <<- scan("resources/allowedUncertaintiesList.txt", what = "character", quiet = TRUE)
   
   # Check input validity
-  checkInputValidity(totalSampleSize, querySize, models, uncertainty, numReports, nrow(X), ncol(X), pca, numPCs, initSampleSize)
+  checkInputValidity(totalSampleSize, querySize, models, uncertainty, numReports, nrow(X), ncol(X),
+                     pca, numPCs, initSampleSize, queryBagging, nBag)
   
   # Perform PCA if necessary
   if (pca) {
@@ -206,9 +226,9 @@ runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models,
   }
   
   queryIdx <- getQueryIndices(X, y.tr.factor, queryIdx, 10,
-                              totalSampleSize, querySize, models, uncertainty, initSampleSize)
+                              totalSampleSize, querySize, models, uncertainty, initSampleSize, queryBagging, nBag)
   q <- queryIdx[1:reportTotalSampleSize]
-  if (length(table(y[q])) != nClass) {
+  if (length(table(y.te.factor[q])) != nClass) {
     stop("A model is about to get y values without all classes. Either numReports is too high or initSampleSize too low.")
   }
   
