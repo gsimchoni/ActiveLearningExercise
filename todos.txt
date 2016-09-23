@@ -1,0 +1,12 @@
+TODOs:
+* Make it a linux/cmd runnable RScript
+* Add logger
+* Parallelize
+* Fancier plotting
+* Add uncertainty methods: Kullback–Leibler, ...
+* Add models
+* Cache 10 digit training data the initial sample would only add to
+* Make it a package
+* Send some tedious code to functions
+* Add datasets
+* Add experiments on binary classification (2 digits from MNIST)
