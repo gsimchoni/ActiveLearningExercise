@@ -21,4 +21,5 @@ If you already have R installed, continue from 3:
 9. Try running:
 
 `runMNISTActiveLearning <- function(totalSampleSize = 300, querySize = 20, models = c("rf", "gbm"), uncertainty = "voteEntropy", numReports = 3, initSampleSize = 100, finalModel = "rf")`
+
 10. Try running experiments in `experiments.R` or `load("results.RData")` to see all their results
