@@ -3,6 +3,8 @@
 #' final query indices, the accuracy on the MNIST test set (x num interim Reports, e.g. from 50 to 500),
 #' and comparison to regular random sampling with the same no. of interim reports
 #' 
+#' @author gsimchoni
+#' 
 #' @param totalSampleSize The total no. of samples to query, a.k.a the Budget
 #' @param querySize How many samples to query in each iteration (default is 1)
 #' @param models A character vector of model(s) to use (see allowedModelsList)
@@ -133,6 +135,8 @@ runMNISTActiveLearning <- function(totalSampleSize = 500, querySize = 1, models,
 }
 
 #' Function for MNIST-AL basic input validation
+#' 
+#' @author gsimchoni
 #' 
 #' @param totalSampleSize The total no. of samples to query, a.k.a the Budget
 #' @param numReports The number of interim steps/reports to make and record performance

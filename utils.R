@@ -1,6 +1,8 @@
 #' Function to choose the right package to upload
 #' If you don't have these use "install.packages(package_name)"
 #' 
+#' @author gsimchoni
+#' 
 #' @param model The model to load
 loadPackage <- function(model) {
   switch(model,
@@ -14,6 +16,8 @@ loadPackage <- function(model) {
 
 #' Wrapper function to route the model fit and prediction to the desired format
 #' TODO: this is cumbersome, maybe go back to the 'caret' framework
+#' 
+#' @author gsimchoni
 #' 
 #' @param model The model string
 #' @param tempTrainDF Temporary train dataset

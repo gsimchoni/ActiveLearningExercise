@@ -1,5 +1,7 @@
 #' The main Active Learning function which return which samples are best to query
 #' 
+#' @author gsimchoni
+#' 
 #' @param X The unlabeled dataset
 #' @param y The labels *factor* vector
 #' @param queryIdx The indices of samples already queried (default is NULL)
@@ -97,6 +99,8 @@ getQueryIndices <- function(X, y, queryIdx = NULL, nClass, totalSampleSize, quer
 
 #' Function for basic input validation
 #' 
+#' @author gsimchoni
+#' 
 #' @param totalSampleSize The total no. of samples to query, a.k.a the Budget
 #' @param querySize How many samples to query in each iteration (default is 1)
 #' @param models A character vector of model(s) to use (see allowedModelsList)
@@ -156,6 +160,8 @@ checkInputValidity <- function(totalSampleSize, querySize, models, uncertainty, 
 }
 
 #' Function for choosing the uncertainty function
+#' 
+#' @author gsimchoni
 #' 
 #' @param pred The big data frame container for all classes predicted probabilities
 #' @param querySize How many samples to query in each iteration (default is 1)
