@@ -8,7 +8,7 @@ If you already have R installed, continue from 3:
 2. For your own good get RStudio IDE: https://www.rstudio.com/
 3. Get the MNIST data: http://yann.lecun.com/exdb/mnist/
 4. Clone this repository to local
-5. gunzip each of the 4 MNIST files into a folder names 'mnist', inside the 'ActiveLearningExercise' which you have cloned
+5. gunzip each of the 4 MNIST files into a folder names 'mnist', inside the 'ActiveLearningExercise' folder which you have cloned
 6. In R (or R Studio) install the necessary packages if you don't have them, e.g. `install.packages("caret")`
     * `caret`
     * `gbm`
