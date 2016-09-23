@@ -20,4 +20,4 @@ If you already have R installed, continue from 3:
 8. Import the `MNISTWrapper.R` script by `source(MNISTWrapper.R)`
 9. Try running:
 
-`runMNISTActiveLearning <- function(totalSampleSize = 200, querySize = 10, models = c("rf", "gbm"), uncertainty = "voteEntropy", numReports = 10, initSampleSize = 100, finalModel = "rf")`
+`runMNISTActiveLearning <- function(totalSampleSize = 300, querySize = 20, models = c("rf", "gbm"), uncertainty = "voteEntropy", numReports = 3, initSampleSize = 100, finalModel = "rf")`
