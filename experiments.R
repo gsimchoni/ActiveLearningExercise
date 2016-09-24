@@ -162,7 +162,7 @@ plot.res(data, c(0.5, 1), "Experiment 6: one model, query bagging",
          "nBag")
 dev.off()
 
-# Experiment 7: committee of models, bagging ------------------------------------------------------------
+# Experiment 7: committee of models + bagging ------------------------------------------------------------
 
 nBags <- c(3, 5)
 models <- c("gbm","rf")
@@ -183,9 +183,9 @@ data <- data.frame(n = n, pl = pl, al = al)
 
 # plot and save to PNG file
 png('exp_graphs/exp7.png')
-plot.res(data, c(0.5, 1), "Experiment 7: committee of models, bagging", 
-         c("random", "AL"),
-         "gbm+rf x 3 bags")
+plot.res(data, c(0.5, 1), "Experiment 7: committee of models + bagging", 
+         c("random", nBags),
+         "(gbm, rf) x")
 dev.off()
 
 
