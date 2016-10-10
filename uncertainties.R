@@ -88,7 +88,7 @@ calculateMargin <- function(x) {
 
 #' Entropy is minus sum of all class probabilities p*(log(p))
 calculateEntropy <- function(x) {
-  return(-sum(x * log(x)))
+  return(-sum(x * log(x), na.rm = TRUE))
 }
 
 # Get for each model the predicted class, with highest probability
